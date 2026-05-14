@@ -1,0 +1,17 @@
+# Dependency directories
+node_modules/
+
+# Environment variables (SANGAT PENTING DITUTUP)
+.env
+
+# Prisma config
+prisma.config.ts
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS metadata
+.DS_Store
+Thumbs.db

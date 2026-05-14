@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  password  String
+  createdAt DateTime @default(now())
+  devices   Device[]
+}
+
+model Device {
+  id               String         @id @default(uuid())
+  serialNumber     String         @unique
+  name             String
+  status           String         @default("online")
+  posisiJemuran    String         @default("MASUK")
+  nightModeEnabled Boolean        @default(false)
+  locationCity     String?        @default("Bandung")
+  userId           String
+  createdAt        DateTime       @default(now())
+  user             User           @relation(fields: [userId], references: [id])
+  notifications    Notification[]
+  logs             SensorLog[]
+}
+
+model SensorLog {
+  id             String   @id @default(uuid())
+  deviceId       String
+  cuaca          String
+  keamanan       String
+  hujanADC       Int
+  ldrADC         Int
+  pirStatus      Int
+  apiWeatherDesc String?
+  createdAt      DateTime @default(now())
+  device         Device   @relation(fields: [deviceId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  deviceId  String
+  type      String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  device    Device   @relation(fields: [deviceId], references: [id])
+}
