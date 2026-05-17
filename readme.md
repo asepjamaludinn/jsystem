@@ -2,40 +2,6 @@
 
 Sistem jemuran pintar berbasis Internet of Things (IoT) yang dapat memonitor cuaca, mendeteksi pergerakan (sistem keamanan), dan mengontrol posisi jemuran secara otomatis maupun manual melalui aplikasi web/mobile
 
-## Alur Komunikasi MQTT (Data Flow)
-
-```mermaid
-sequenceDiagram
-    autonumber
-
-    participant ESP32 as ESP32 Hardware
-    participant Broker as HiveMQ Broker
-    participant Backend as Node.js Backend
-    participant DB as PostgreSQL
-    participant App as Frontend App
-
-    rect rgb(230, 245, 255)
-        Note over ESP32,App: Alur 1 - Pembacaan Sensor (Tiap 3 Detik)
-
-        ESP32->>Broker: Publish JSON ke 'jemuran/sensor'
-        Broker->>Backend: Forward message
-        Backend->>Backend: Evaluasi status (Cuaca/Keamanan)
-        Backend->>DB: Insert ke tabel SensorLog
-        Backend-->>App: Emit Socket.io ('sensorUpdate')
-    end
-
-    rect rgb(230, 255, 240)
-        Note over App,ESP32: Alur 2 - Kontrol Pengguna
-
-        App->>Backend: POST /api/device/:id/control
-        Backend->>DB: Update posisiJemuran
-        Backend->>Broker: Publish ke 'jemuran/control/{SN}'
-        Broker->>ESP32: Forward command
-        ESP32->>ESP32: Gerakkan servo
-        ESP32->>ESP32: Update LCD
-    end
-```
-
 ## Tech Stack
 
 - Backend: Node.js, Express.js, Socket.io (Real-time)
