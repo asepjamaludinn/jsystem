@@ -40,7 +40,13 @@ describe("Device Controller - Control Jemuran", () => {
       id: "device-001",
       serialNumber: "SN-123",
     });
-    mqttService.sendCommandWithDurationToDevice.mockReturnValue(true);
+
+    // PERBAIKAN: Mengembalikan object yang sesuai dengan ekspektasi controller
+    mqttService.sendCommandWithDurationToDevice.mockReturnValue({
+      success: true,
+      queued: false,
+    });
+
     prisma.device.update.mockResolvedValue(true);
 
     await controlJemuran(req, res, next);

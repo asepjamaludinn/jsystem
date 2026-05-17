@@ -129,9 +129,10 @@ export const controlJemuran = asyncHandler(async (req, res) => {
       .json({ success: false, error: "Alat tidak ditemukan" });
 
   const payload = { action: command };
-  const success = sendCommandWithDurationToDevice(device.serialNumber, payload);
 
-  if (success) {
+  const result = sendCommandWithDurationToDevice(device.serialNumber, payload);
+
+  if (result.success) {
     if (command === JEMURAN_STATE.MASUK || command === JEMURAN_STATE.KELUAR) {
       await prisma.device.update({
         where: { id: deviceId },
@@ -141,12 +142,15 @@ export const controlJemuran = asyncHandler(async (req, res) => {
 
     res.json({
       success: true,
-      message: `Perintah ${command} berhasil dikirim ke perangkat.`,
+      message: result.queued
+        ? `Broker offline. Perintah ${command} telah dimasukkan ke dalam antrean.`
+        : `Perintah ${command} berhasil dikirim ke perangkat.`,
     });
   } else {
-    const error = new Error("MQTT Broker sedang offline.");
-    error.statusCode = 500;
-    throw error;
+    return res.status(500).json({
+      success: false,
+      error: "Gagal memproses perintah MQTT.",
+    });
   }
 });
 
@@ -161,13 +165,15 @@ export const toggleNightMode = asyncHandler(async (req, res) => {
 
   const mode = nightModeEnabled ? NIGHT_MODE_STATE.ON : NIGHT_MODE_STATE.OFF;
 
-  sendCommandWithDurationToDevice(updatedDevice.serialNumber, {
+  const result = sendCommandWithDurationToDevice(updatedDevice.serialNumber, {
     action: mode,
   });
 
   res.json({
     success: true,
-    message: "Mode malam diperbarui!",
+    message: result.queued
+      ? "Mode malam diperbarui! (Namun masuk antrean karena broker sedang offline)"
+      : "Mode malam diperbarui!",
     data: { device: updatedDevice },
   });
 });

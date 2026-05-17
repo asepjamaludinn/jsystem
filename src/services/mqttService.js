@@ -1,5 +1,6 @@
 import mqtt from "mqtt";
 import prisma from "../config/db.js";
+import { mqttPayloadSchema } from "../validators/mqttValidator.js";
 import {
   JEMURAN_STATE,
   WEATHER_STATE,
@@ -9,6 +10,8 @@ import {
 
 let mqttClient;
 const deviceStates = {};
+
+const offlineQueue = [];
 
 const checkStateDifference = (lastState, data) => {
   return (
@@ -112,20 +115,58 @@ export const initMqtt = (io) => {
     username: process.env.MQTT_USERNAME,
     password: process.env.MQTT_PASSWORD,
     protocol: "mqtts",
+    reconnectPeriod: 5000,
   });
 
   mqttClient.on("connect", () => {
     console.log("Terhubung ke Broker MQTT HiveMQ!");
+
+    if (offlineQueue.length > 0) {
+      console.log(
+        `[MQTT] Memproses ${offlineQueue.length} pesan tertunda dari antrean...`,
+      );
+      while (offlineQueue.length > 0) {
+        const { topic, message } = offlineQueue.shift();
+        mqttClient.publish(topic, message);
+        console.log(`[MQTT] Berhasil mengirim pesan tertunda ke ${topic}`);
+      }
+    }
+
     mqttClient.subscribe("jemuran/sensor", (err) => {
       if (!err) console.log("Mendengarkan topik: jemuran/sensor");
     });
   });
 
+  mqttClient.on("offline", () => {
+    console.warn(
+      "[MQTT Peringatan] Koneksi broker terputus. Sistem beralih ke mode antrean (Queue Mode).",
+    );
+  });
+
   mqttClient.on("message", async (topic, message) => {
     try {
-      const data = JSON.parse(message.toString());
+      let parsedJson;
+      try {
+        parsedJson = JSON.parse(message.toString());
+      } catch (parseError) {
+        console.warn(
+          "[MQTT Peringatan] Mengabaikan payload rusak (Malformed JSON):",
+          message.toString(),
+        );
+        return;
+      }
 
-      if (!data.deviceId) return;
+      const validation = mqttPayloadSchema.safeParse(parsedJson);
+
+      if (!validation.success) {
+        console.warn(
+          "[MQTT Peringatan] Struktur payload tidak sesuai skema (Zod):",
+          validation.error.format(),
+        );
+        return;
+      }
+
+      const data = validation.data;
 
       const device = await prisma.device.findUnique({
         where: { serialNumber: data.deviceId },
@@ -150,16 +191,23 @@ export const initMqtt = (io) => {
         };
       }
     } catch (error) {
-      console.error("Gagal memproses pesan MQTT:", error.message);
+      console.error("[MQTT Error Kesistem]:", error.message);
     }
   });
 };
 
 export const sendCommandWithDurationToDevice = (serialNumber, payloadObj) => {
+  const topic = `jemuran/control/${serialNumber}`;
+  const message = JSON.stringify(payloadObj);
+
   if (mqttClient && mqttClient.connected) {
-    const topic = `jemuran/control/${serialNumber}`;
-    mqttClient.publish(topic, JSON.stringify(payloadObj));
-    return true;
+    mqttClient.publish(topic, message);
+    return { success: true, queued: false };
+  } else {
+    console.warn(
+      `[MQTT] Broker offline. Memasukkan perintah ke dalam antrean: ${topic}`,
+    );
+    offlineQueue.push({ topic, message });
+    return { success: true, queued: true };
   }
-  return false;
 };
