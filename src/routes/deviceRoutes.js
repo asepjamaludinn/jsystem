@@ -10,6 +10,7 @@ import {
   getWeatherByDeviceLocation,
   markNotificationsAsRead,
   markSingleNotificationAsRead,
+  unclaimDevice,
 } from "../controllers/deviceController.js";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
 
@@ -34,5 +35,7 @@ router.post("/:deviceId/control", controlJemuran);
 router.put("/:deviceId/nightmode", toggleNightMode);
 
 router.get("/:deviceId/weather", getWeatherByDeviceLocation);
+
+router.delete("/:deviceId/unclaim", unclaimDevice);
 
 export default router;

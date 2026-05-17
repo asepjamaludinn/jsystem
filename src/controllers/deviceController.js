@@ -231,3 +231,20 @@ export const markSingleNotificationAsRead = asyncHandler(async (req, res) => {
     message: "Notifikasi berhasil ditandai telah dibaca.",
   });
 });
+
+export const unclaimDevice = asyncHandler(async (req, res) => {
+  const { deviceId } = req.params;
+  const userId = req.user.userId;
+
+  await prisma.device.update({
+    where: { id: deviceId },
+    data: {
+      users: { disconnect: { id: userId } },
+    },
+  });
+
+  res.json({
+    success: true,
+    message: "Perangkat berhasil dihapus dari akun Anda.",
+  });
+});

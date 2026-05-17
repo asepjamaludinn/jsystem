@@ -41,7 +41,6 @@ describe("Device Controller - Control Jemuran", () => {
       serialNumber: "SN-123",
     });
 
-    // PERBAIKAN: Mengembalikan object yang sesuai dengan ekspektasi controller
     mqttService.sendCommandWithDurationToDevice.mockReturnValue({
       success: true,
       queued: false,
