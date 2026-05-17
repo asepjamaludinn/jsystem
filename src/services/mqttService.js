@@ -1,9 +1,111 @@
 import mqtt from "mqtt";
 import prisma from "../config/db.js";
+import {
+  JEMURAN_STATE,
+  WEATHER_STATE,
+  SECURITY_STATE,
+  DEVICE_STATUS,
+} from "../utils/constants.js";
 
 let mqttClient;
-
 const deviceStates = {};
+
+const checkStateDifference = (lastState, data) => {
+  return (
+    lastState.cuaca !== data.cuaca ||
+    lastState.keamanan !== data.keamanan ||
+    lastState.posisiJemuran !== data.posisiJemuran
+  );
+};
+
+const logSensorActivity = async (deviceId, data) => {
+  await prisma.sensorLog.create({
+    data: {
+      deviceId,
+      cuaca: data.cuaca,
+      keamanan: data.keamanan,
+      hujanADC: data.hujanADC,
+      ldrADC: data.ldrADC,
+      pirStatus: data.pirStatus,
+    },
+  });
+};
+
+const updateDeviceStatus = async (deviceId, posisiJemuran) => {
+  if (posisiJemuran) {
+    await prisma.device.update({
+      where: { id: deviceId },
+      data: { posisiJemuran, status: DEVICE_STATUS.ONLINE },
+    });
+  }
+};
+
+const createAndEmitNotification = async (deviceId, type, message, io) => {
+  const notif = await prisma.notification.create({
+    data: { deviceId, type, message },
+  });
+  io.emit("notification", notif);
+};
+
+const checkAndSendNotifications = async (device, data, lastState, io) => {
+  if (
+    data.cuaca === WEATHER_STATE.HUJAN &&
+    lastState.cuaca !== WEATHER_STATE.HUJAN
+  ) {
+    await createAndEmitNotification(
+      device.id,
+      "warning",
+      "Hujan Turun! Motor servo otomatis menarik jemuran ke tempat teduh.",
+      io,
+    );
+  }
+
+  if (
+    data.posisiJemuran === JEMURAN_STATE.KELUAR &&
+    lastState.posisiJemuran === JEMURAN_STATE.MASUK
+  ) {
+    await createAndEmitNotification(
+      device.id,
+      "info",
+      "Cuaca kembali cerah. Pakaian dikeluarkan secara otomatis untuk dijemur.",
+      io,
+    );
+  }
+
+  if (
+    data.posisiJemuran === JEMURAN_STATE.MASUK &&
+    lastState.posisiJemuran === JEMURAN_STATE.KELUAR &&
+    data.cuaca !== WEATHER_STATE.HUJAN
+  ) {
+    await createAndEmitNotification(
+      device.id,
+      "info",
+      "Kondisi lingkungan minim cahaya (Gelap). Jemuran ditarik masuk demi keamanan pakaian.",
+      io,
+    );
+  }
+
+  if (
+    (data.pirStatus === 1 || data.keamanan === SECURITY_STATE.ADA_ORANG) &&
+    lastState.keamanan !== SECURITY_STATE.ADA_ORANG
+  ) {
+    await createAndEmitNotification(
+      device.id,
+      "danger",
+      "Peringatan Keamanan! Terdeteksi pergerakan mencurigakan di area jemuran!",
+      io,
+    );
+  }
+};
+
+const handleDeviceStateChange = async (device, data, lastState, io) => {
+  console.log(
+    `[LOG] Perubahan status terdeteksi pada device: ${device.serialNumber}`,
+  );
+  await logSensorActivity(device.id, data);
+  await updateDeviceStatus(device.id, data.posisiJemuran);
+  await checkAndSendNotifications(device, data, lastState, io);
+};
 
 export const initMqtt = (io) => {
   mqttClient = mqtt.connect(process.env.MQTT_BROKER_URL, {
@@ -23,111 +125,29 @@ export const initMqtt = (io) => {
     try {
       const data = JSON.parse(message.toString());
 
-      if (data.deviceId) {
-        const device = await prisma.device.findUnique({
-          where: { serialNumber: data.deviceId },
-        });
+      if (!data.deviceId) return;
 
-        if (!device) return;
+      const device = await prisma.device.findUnique({
+        where: { serialNumber: data.deviceId },
+      });
 
-        data.deviceId = device.id;
+      if (!device) return;
 
-        io.emit("sensorUpdate", data);
+      data.deviceId = device.id;
 
-        const lastState = deviceStates[device.id] || {};
+      io.emit("sensorUpdate", data);
 
-        const isChanged =
-          lastState.cuaca !== data.cuaca ||
-          lastState.keamanan !== data.keamanan ||
-          lastState.posisiJemuran !== data.posisiJemuran;
+      const lastState = deviceStates[device.id] || {};
+      const isChanged = checkStateDifference(lastState, data);
 
-        if (isChanged) {
-          console.log(
-            `[LOG] Perubahan status terdeteksi pada device: ${device.serialNumber}`,
-          );
+      if (isChanged) {
+        await handleDeviceStateChange(device, data, lastState, io);
 
-          await prisma.sensorLog.create({
-            data: {
-              deviceId: device.id,
-              cuaca: data.cuaca,
-              keamanan: data.keamanan,
-              hujanADC: data.hujanADC,
-              ldrADC: data.ldrADC,
-              pirStatus: data.pirStatus,
-            },
-          });
-
-          if (data.posisiJemuran) {
-            await prisma.device.update({
-              where: { id: device.id },
-              data: { posisiJemuran: data.posisiJemuran, status: "online" },
-            });
-          }
-
-          if (data.cuaca === "Hujan" && lastState.cuaca !== "Hujan") {
-            const notif = await prisma.notification.create({
-              data: {
-                deviceId: device.id,
-                type: "warning",
-                message:
-                  "Hujan Turun! Motor servo otomatis menarik jemuran ke tempat teduh.",
-              },
-            });
-            io.emit("notification", notif);
-          }
-
-          if (
-            data.posisiJemuran === "KELUAR" &&
-            lastState.posisiJemuran === "MASUK"
-          ) {
-            const notif = await prisma.notification.create({
-              data: {
-                deviceId: device.id,
-                type: "info",
-                message:
-                  "Cuaca kembali cerah. Pakaian dikeluarkan secara otomatis untuk dijemur.",
-              },
-            });
-            io.emit("notification", notif);
-          }
-
-          if (
-            data.posisiJemuran === "MASUK" &&
-            lastState.posisiJemuran === "KELUAR" &&
-            data.cuaca !== "Hujan"
-          ) {
-            const notif = await prisma.notification.create({
-              data: {
-                deviceId: device.id,
-                type: "info",
-                message:
-                  "Kondisi lingkungan minim cahaya (Gelap). Jemuran ditarik masuk demi keamanan pakaian.",
-              },
-            });
-            io.emit("notification", notif);
-          }
-
-          if (
-            (data.pirStatus === 1 || data.keamanan === "ADA ORANG!") &&
-            lastState.keamanan !== "ADA ORANG!"
-          ) {
-            const notif = await prisma.notification.create({
-              data: {
-                deviceId: device.id,
-                type: "danger",
-                message:
-                  "Peringatan Keamanan! Terdeteksi pergerakan mencurigakan di area jemuran!",
-              },
-            });
-            io.emit("notification", notif);
-          }
-
-          deviceStates[device.id] = {
-            cuaca: data.cuaca,
-            keamanan: data.keamanan,
-            posisiJemuran: data.posisiJemuran,
-          };
-        }
+        deviceStates[device.id] = {
+          cuaca: data.cuaca,
+          keamanan: data.keamanan,
+          posisiJemuran: data.posisiJemuran,
+        };
       }
     } catch (error) {
       console.error("Gagal memproses pesan MQTT:", error.message);

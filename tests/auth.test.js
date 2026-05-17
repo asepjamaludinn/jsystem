@@ -3,6 +3,10 @@ import { register } from "../src/controllers/authController.js";
 import prisma from "../src/config/db.js";
 import bcrypt from "bcryptjs";
 
+vi.mock("../src/config/supabase.js", () => ({
+  supabase: {},
+}));
+
 vi.mock("../src/config/db.js", () => ({
   default: {
     user: {
@@ -19,7 +23,7 @@ vi.mock("bcryptjs", () => ({
 }));
 
 describe("Auth Controller - Register", () => {
-  let req, res;
+  let req, res, next;
 
   beforeEach(() => {
     req = {
@@ -33,6 +37,7 @@ describe("Auth Controller - Register", () => {
       status: vi.fn().mockReturnThis(),
       json: vi.fn(),
     };
+    next = vi.fn();
     vi.clearAllMocks();
   });
 
@@ -44,15 +49,17 @@ describe("Auth Controller - Register", () => {
       email: req.body.email,
     });
 
-    await register(req, res);
+    await register(req, res, next);
 
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { email: req.body.email },
     });
     expect(res.status).toHaveBeenCalledWith(201);
+
     expect(res.json).toHaveBeenCalledWith({
+      success: true,
       message: "Registrasi berhasil!",
-      userId: "user-123",
+      data: { userId: "user-123" },
     });
   });
 
@@ -62,10 +69,14 @@ describe("Auth Controller - Register", () => {
       email: req.body.email,
     });
 
-    await register(req, res);
+    await register(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: "Email sudah terdaftar!" });
+
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Email sudah terdaftar!",
+    });
 
     expect(prisma.user.create).not.toHaveBeenCalled();
   });

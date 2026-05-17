@@ -1,6 +1,4 @@
 import express from "express";
-import multer from "multer";
-import path from "path";
 import {
   register,
   login,
@@ -10,40 +8,30 @@ import {
   uploadAvatar,
 } from "../controllers/authController.js";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
+import { validate } from "../middlewares/validateMiddleware.js";
+import { uploadAvatarMiddleware } from "../middlewares/uploadMiddleware.js";
+import {
+  registerSchema,
+  loginSchema,
+  updateProfileSchema,
+  changePasswordSchema,
+} from "../validators/authValidator.js";
 
 const router = express.Router();
 
-const storage = multer.memoryStorage();
-
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png/;
-  const extname = allowedTypes.test(
-    path.extname(file.originalname).toLowerCase(),
-  );
-  const mimetype = allowedTypes.test(file.mimetype);
-
-  if (mimetype && extname) {
-    return cb(null, true);
-  } else {
-    cb(new Error("Hanya file gambar (JPG/PNG) yang diperbolehkan!"));
-  }
-};
-
-const upload = multer({
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: { fileSize: 2 * 1024 * 1024 },
-});
-
-router.post("/register", register);
-router.post("/login", login);
+router.post("/register", validate(registerSchema), register);
+router.post("/login", validate(loginSchema), login);
 
 router.use(authenticateToken);
 
 router.get("/profile", getProfile);
-router.put("/profile", updateProfile);
-router.put("/profile/password", changePassword);
+router.put("/profile", validate(updateProfileSchema), updateProfile);
+router.put("/profile/password", validate(changePasswordSchema), changePassword);
 
-router.post("/profile/avatar", upload.single("avatar"), uploadAvatar);
+router.post(
+  "/profile/avatar",
+  uploadAvatarMiddleware.single("avatar"),
+  uploadAvatar,
+);
 
 export default router;

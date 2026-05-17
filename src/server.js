@@ -5,8 +5,10 @@ import http from "http";
 import { Server } from "socket.io";
 
 import { initMqtt } from "./services/mqttService.js";
+import { initCronJobs } from "./services/cronService.js";
 import authRoutes from "./routes/authRoutes.js";
 import deviceRoutes from "./routes/deviceRoutes.js";
+import { errorHandler } from "./middlewares/errorMiddleware.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -25,6 +27,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/device", deviceRoutes);
 
 initMqtt(io);
+initCronJobs();
 
 io.on("connection", (socket) => {
   console.log(`Client Web Terhubung: ${socket.id}`);
@@ -33,6 +36,8 @@ io.on("connection", (socket) => {
     console.log(`Client Web Terputus: ${socket.id}`);
   });
 });
+
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
