@@ -61,10 +61,20 @@ export const claimDevice = asyncHandler(async (req, res) => {
 
 export const getDeviceLogs = asyncHandler(async (req, res) => {
   const { deviceId } = req.params;
+
+  const limit = parseInt(req.query.limit) || 20;
+  const page = parseInt(req.query.page) || 1;
+  const skip = (page - 1) * limit;
+
   const logs = await prisma.sensorLog.findMany({
     where: { deviceId },
     orderBy: { createdAt: "desc" },
-    take: 20,
+    take: limit,
+    skip: skip,
+  });
+
+  const totalLogs = await prisma.sensorLog.count({
+    where: { deviceId },
   });
 
   if (!logs || logs.length === 0) {
@@ -72,6 +82,12 @@ export const getDeviceLogs = asyncHandler(async (req, res) => {
       success: true,
       message: "Log perangkat kosong",
       data: [],
+      pagination: {
+        total: totalLogs,
+        page,
+        limit,
+        totalPages: Math.ceil(totalLogs / limit),
+      },
     });
   }
 
@@ -79,6 +95,12 @@ export const getDeviceLogs = asyncHandler(async (req, res) => {
     success: true,
     message: "Log berhasil diambil",
     data: logs,
+    pagination: {
+      total: totalLogs,
+      page,
+      limit,
+      totalPages: Math.ceil(totalLogs / limit),
+    },
   });
 });
 
@@ -97,16 +119,32 @@ export const deleteDeviceLog = asyncHandler(async (req, res) => {
 
 export const getDeviceNotifications = asyncHandler(async (req, res) => {
   const { deviceId } = req.params;
+
+  const limit = parseInt(req.query.limit) || 20;
+  const page = parseInt(req.query.page) || 1;
+  const skip = (page - 1) * limit;
+
   const notifications = await prisma.notification.findMany({
     where: { deviceId },
     orderBy: { createdAt: "desc" },
-    take: 20,
+    take: limit,
+    skip: skip,
+  });
+
+  const totalNotifs = await prisma.notification.count({
+    where: { deviceId },
   });
 
   res.json({
     success: true,
     message: "Notifikasi berhasil diambil",
     data: notifications,
+    pagination: {
+      total: totalNotifs,
+      page,
+      limit,
+      totalPages: Math.ceil(totalNotifs / limit),
+    },
   });
 });
 
